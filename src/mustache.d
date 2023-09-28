@@ -39,12 +39,10 @@ class MustacheException : Exception
 /**
  * Core implementation of Mustache
  *
- * $(D_PARAM String) parameter means a string type to render.
+ * $(D_PARAM string) parameter means a string type to render.
  *
  * Example:
  * -----
- * alias MustacheEngine!(string) Mustache;
- *
  * Mustache mustache;
  * auto context = new Mustache.Context;
  *
@@ -70,13 +68,12 @@ class MustacheException : Exception
  * Well, $6000, after taxes.
  * -----
  */
-struct MustacheEngine(String = string) if (isSomeString!(String))
+struct Mustache
 {
-    static assert(!is(String == wstring), "wstring is unsupported. It's a buggy!");
-
+	alias String = string;
 
   public:
-    alias String delegate(String) Handler;
+    alias string delegate(string) Handler;
     alias string delegate(string) FindPath;
 
 
@@ -157,14 +154,24 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
             nil, use, var, func, list
         }
 
+		static string sectionTypeToString(SectionType st) {
+			final switch(st) {
+				case SectionType.nil: return "nil";
+				case SectionType.use: return "use";
+				case SectionType.var: return "var";
+				case SectionType.func: return "func";
+				case SectionType.list: return "list";
+			}
+		}
+
         struct Section
         {
             SectionType type;
 
             union
             {
-                String[String]          var;
-                String delegate(String) func;  // func type is String delegate(String) delegate()?
+                string[string]          var;
+                string delegate(string) func;  // func type is string delegate(string) delegate()?
                 Context[]               list;
             }
 
@@ -175,13 +182,13 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
                     type = SectionType.use;
                 }
 
-                this(String[String] v)
+                this(string[string] v)
                 {
                     type = SectionType.var;
                     var  = v;
                 }
 
-                this(String delegate(String) f)
+                this(string delegate(string) f)
                 {
                     type = SectionType.func;
                     func = f;
@@ -229,8 +236,8 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
 
         const Context   parent;
-        String[String]  variables;
-        Section[String] sections;
+        string[string]  variables;
+        Section[string] sections;
 
 
       public:
@@ -253,13 +260,13 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
          *  a RangeError if $(D_PARAM key) does not exist.
          */
         @safe
-        String opIndex(in String key) const nothrow
+        string opIndex(in string key) const nothrow
         {
             return variables[key];
         }
 
         /**
-         * Assigns $(D_PARAM value)(automatically convert to String) to $(D_PARAM key) field.
+         * Assigns $(D_PARAM value)(automatically convert to string) to $(D_PARAM key) field.
          *
          * If you try to assign associative array or delegate,
          * This method assigns $(D_PARAM value) as Section.
@@ -271,29 +278,35 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
          *  key   = key string to assign
          */
         @trusted
-        void opIndexAssign(T)(T value, in String key)
+        void opIndexAssign(T)(T value, in string key)
         {
             static if (isAssociativeArray!(T))
             {
-                static if (is(T V : V[K], K : String))
+                static if (is(T V : V[K], K : string))
                 {
-                    String[String] aa;
+                    string[string] aa;
 
-                    static if (is(V == String))
+                    static if (is(V == string))
                         aa = value;
                     else
-                        foreach (k, v; value) aa[k] = to!String(v);
+                        foreach (k, v; value) aa[k] = v;
 
                     sections[key] = Section(aa);
                 }
                 else static assert(false, "Non-supported Associative Array type");
             }
-            else static if (isCallable!T)
+            else static if (is(typeof(T) == delegate) || is(T == delegate))
             {
+                static if (is(typeof(v) D == S delegate(S), S : string))
+                    sections[key] = Section(v);
+                else static assert(false, "Non-supported delegate type");
+			} 
+			else static if (isCallable!T)
+			{
                 import std.functional : toDelegate;
 
                 auto v = toDelegate(value);
-                static if (is(typeof(v) D == S delegate(S), S : String))
+                static if (is(typeof(v) D == S delegate(S), S : string))
                     sections[key] = Section(v);
                 else static assert(false, "Non-supported delegate type");
             }
@@ -305,7 +318,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
             }
             else
             {
-                variables[key] = to!String(value);
+                variables[key] = to!string(value);
             }
         }
 
@@ -319,7 +332,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
          *  I don't like this method, but D's typing can't well-handle Ruby's typing.
          */
         @safe
-        void useSection(in String key)
+        void useSection(in string key)
         {
             sections[key] = Section(true);
         }
@@ -336,7 +349,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
          *  new Context object that added to $(D_PARAM key) section list.
          */
         @trusted
-        Context addSubContext(in String key, lazy size_t size = 1)
+        Context addSubContext(in string key, lazy size_t size = 1)
         {
             auto c = new Context(this);
             auto p = key in sections;
@@ -362,7 +375,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
          *  a $(D_PARAM key) associated value.　null if key does not exist.
          */
         @trusted
-        String fetch(in String[] key, lazy Handler handler = null) const
+        string fetch(in string[] key, lazy Handler handler = null) const
         {
             assert(key.length > 0);
 
@@ -388,7 +401,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
 
         @trusted
-        const(Section) fetchSection()(in String[] key) const /* nothrow */
+        const(Section) fetchSection()(in string[] key) const /* nothrow */
         {
             assert(key.length > 0);
 
@@ -425,18 +438,20 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
 
         @trusted
-        const(Result) fetchSection(Result, SectionType type, string name)(in String[] key) const /* nothrow */
+        const(Result) fetchSection(Result, SectionType type, string name)
+		(in string[] key) const /* nothrow */
         {
             auto result = fetchSection(key);
             if (result.type == type)
-                return result.empty ? null : mixin("result." ~ to!string(type));
+                return result.empty ? null : mixin("result." ~
+						sectionTypeToString(type));
 
             return null;
         }
 
-        alias fetchSection!(String[String],          SectionType.var,  "Var")  fetchVar;
+        alias fetchSection!(string[string],          SectionType.var,  "Var")  fetchVar;
         alias fetchSection!(Context[],               SectionType.list, "List") fetchList;
-        alias fetchSection!(String delegate(String), SectionType.func, "Func") fetchFunc;
+        alias fetchSection!(string delegate(string), SectionType.func, "Func") fetchFunc;
     }
 
     unittest
@@ -461,29 +476,29 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
 
             foreach (i, sub; context.fetchList(["sub"])) {
                 assert(sub.fetch(["name"]) == "Red Bull");
-                assert(sub["num"] == to!String(i + 100));
+                assert(sub["num"] == to!string(i + 100));
 
                 foreach (j, subsub; sub.fetchList(["subsub"])) {
-                    assert(subsub.fetch(["price"]) == to!String(275));
-                    assert(subsub["To be or not to be"] == to!String(j == 0));
+                    assert(subsub.fetch(["price"]) == to!string(275));
+                    assert(subsub["To be or not to be"] == to!string(j == 0));
                 }
             }
         }
         { // variable
-            String[String] aa = ["name" : "Ritsu"];
+            string[string] aa = ["name" : "Ritsu"];
 
             context["Value"] = aa;
             assert(context.fetchVar(["Value"]) == cast(const)aa);
         }
         { // func
-            auto func = function (String str) { return "<b>" ~ str ~ "</b>"; };
+            auto func = function (string str) { return "<b>" ~ str ~ "</b>"; };
 
             context["Wrapped"] = func;
             assert(context.fetchFunc(["Wrapped"])("Ritsu") == func("Ritsu"));
         }
         { // handler
-            Handler fixme = delegate String(String s) { assert(s=="unknown"); return "FIXME"; };
-            Handler error = delegate String(String s) { assert(s=="unknown"); throw new MustacheException("Unknow"); };
+            Handler fixme = delegate string(string s) { assert(s=="unknown"); return "FIXME"; };
+            Handler error = delegate string(string s) { assert(s=="unknown"); throw new MustacheException("Unknow"); };
 
             assert(context.fetch(["unknown"]) == "");
             assert(context.fetch(["unknown"], fixme) == "FIXME");
@@ -500,7 +515,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
             auto list = context.fetchList(["a"]);
             assert(list.length == 1);
             foreach (i, s; list)
-                assert(s["num"] == to!String(42));
+                assert(s["num"] == to!string(42));
         }
     }
 
@@ -622,11 +637,11 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
      *  rendered result.
      *
      * Throws:
-     *  object.Exception if String alignment is mismatched from template file.
+     *  object.Exception if string alignment is mismatched from template file.
      */
-    String render()(in string name, in Context context)
+    string render()(in string name, in Context context)
     {
-        auto sink = appender!String();
+        auto sink = appender!string();
         render(name, context, sink);
         return sink.data;
     }
@@ -635,7 +650,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
     * OutputRange version of $(D render).
     */
     void render(Sink)(in string name, in Context context, ref Sink sink)
-        if(isOutputRange!(Sink, String))
+        if(isOutputRange!(Sink, string))
     {
         /*
          * Helper for file reading
@@ -644,10 +659,10 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
          *  object.Exception if alignment is mismatched.
          */
         @trusted
-        static String readFile(string file)
+        static string readFile(string file)
         {
             // cast checks character encoding alignment.
-            return cast(String)read(file);
+            return cast(string)read(file);
         }
 
         string file;
@@ -682,9 +697,9 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
     /**
      * string version of $(D render).
      */
-    String renderString()(in String src, in Context context)
+    string renderString()(in string src, in Context context)
     {
-        auto sink = appender!String();
+        auto sink = appender!string();
         renderString(src, context, sink);
         return sink.data;
     }
@@ -692,8 +707,8 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
     /**
      * string/OutputRange version of $(D render).
      */
-    void renderString(Sink)(in String src, in Context context, ref Sink sink)
-        if(isOutputRange!(Sink, String))
+    void renderString(Sink)(in string src, in Context context, ref Sink sink)
+        if(isOutputRange!(Sink, string))
     {
         renderImpl(compile(src), context, sink);
     }
@@ -704,15 +719,15 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
      * Implemention of render function.
      */
     void renderImpl(Sink)(in Node[] nodes, in Context context, ref Sink sink)
-        if(isOutputRange!(Sink, String))
+        if(isOutputRange!(Sink, string))
     {
         // helper for HTML escape(original function from std.xml.encode)
-        static void encode(in String text, ref Sink sink)
+        static void encode(in string text, ref Sink sink)
         {
             size_t index;
 
             foreach (i, c; text) {
-                String temp;
+                string temp;
 
                 switch (c) {
                 case '&': temp = "&amp;";  break;
@@ -777,7 +792,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
                 }
                 break;
             case NodeType.partial:
-                render(to!string(node.key.front), context, sink);
+                render(node.key.front, context, sink);
                 break;
             }
         }
@@ -786,8 +801,8 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
 
     unittest
     {
-        MustacheEngine!(String) m;
-        auto render = (String str, Context c) => m.renderString(str, c);
+        Mustache m;
+        auto render = (string str, Context c) => m.renderString(str, c);
 
         { // var
             auto context = new Context;
@@ -801,10 +816,10 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
             auto context = new Context;
             context["name"] = "Ritsu & Mio";
 
-            m.handler = delegate String(String s) { assert(s=="unknown"); return "FIXME"; };
+            m.handler = delegate string(string s) { assert(s=="unknown"); return "FIXME"; };
             assert(render("Hello {{unknown}}", context) == "Hello FIXME");
 
-            m.handler = delegate String(String s) { assert(s=="unknown"); throw new MustacheException("Unknow"); };
+            m.handler = delegate string(string s) { assert(s=="unknown"); throw new MustacheException("Unknow"); };
             try {
                 assert(render("Hello {{&unknown}}", context) == "Hello Ritsu & Mio");
                 assert(false);
@@ -824,7 +839,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         { // var section
             auto context = new Context;
-            String[String] aa = ["name" : "Ritsu"];
+            string[string] aa = ["name" : "Ritsu"];
             context["person?"] = aa;
 
             assert(render("{{#person?}}  Hi {{name}}!\n{{/person?}}", context) ==
@@ -832,11 +847,11 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         { // inverted section
             {
-                String temp  = "{{#repo}}\n<b>{{name}}</b>\n{{/repo}}\n{{^repo}}\nNo repos :(\n{{/repo}}\n";
+                string temp  = "{{#repo}}\n<b>{{name}}</b>\n{{/repo}}\n{{^repo}}\nNo repos :(\n{{/repo}}\n";
                 auto context = new Context;
                 assert(render(temp, context) == "\nNo repos :(\n");
 
-                String[String] aa;
+                string[string] aa;
                 context["person?"] = aa;
                 assert(render(temp, context) == "\nNo repos :(\n");
             }
@@ -852,7 +867,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
             assert(render("<h1>Today{{! ignore me }}.</h1>", context) == "<h1>Today.</h1>");
         }
         { // partial
-            std.file.write("user.mustache", to!String("<strong>{{name}}</strong>"));
+            std.file.write("user.mustache", to!string("<strong>{{name}}</strong>"));
             scope(exit) std.file.remove("user.mustache");
 
             auto context = new Context;
@@ -904,7 +919,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
     /*
      * Compiles $(D_PARAM src) into Intermediate Representation.
      */
-    static Node[] compile(String src)
+    static Node[] compile(string src)
     {
         bool beforeNewline = true;
 
@@ -932,10 +947,10 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
             return false;
         }
 
-        String sTag = "{{";
-        String eTag = "}}";
+        string sTag = "{{";
+        string eTag = "}}";
 
-        void setDelimiter(String src)
+        void setDelimiter(string src)
         {
             auto i = src.indexOf(" ");
             if (i == -1)
@@ -945,7 +960,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
             eTag = src[i + 1..$].stripLeft();
         }
 
-        size_t getEnd(String src)
+        size_t getEnd(string src)
         {
             auto end = src.indexOf(eTag);
             if (end == -1)
@@ -957,9 +972,9 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         // State capturing for section
         struct Memo
         {
-            String[] key;
+            string[] key;
             Node[]   nodes;
-            String   source;
+            string   source;
 
             bool opEquals()(auto ref const Memo m) inout
             {
@@ -1018,7 +1033,8 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
                     throw new MustacheException(to!string(key) ~ " is unopened");
                 auto memo = stack.back; stack.popBack(); stack.assumeSafeAppend();
                 if (key != memo.key)
-                    throw new MustacheException(to!string(key) ~ " is different from expected " ~ to!string(memo.key));
+                    throw new MustacheException(to!string(key) ~ " is different from expected " 
+							~ to!string(memo.key));
 
                 if (src.length == (end + eTag.length)) // for end of template
                     fixWS(result[$ - 1]);
@@ -1114,9 +1130,9 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
     }
 
-    private static String[] parseKey(String src, String eTag, out size_t end)
+    static string[] parseKey(string src, string eTag, out size_t end)
     {
-        String[] key;
+        string[] key;
         size_t index = 0;
         size_t keySegmentStart = 0;
         // Index from before eating whitespace, so stripRight
@@ -1149,7 +1165,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         eatWhitespace();
         keySegmentStart = index;
 
-        enum String dot = ".";
+        enum string dot = ".";
         while (true) {
             if (src[index..$].startsWith(eTag)) {
                 acceptKeySegment();
@@ -1173,7 +1189,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
     {
         {  // single char, single segment, no whitespace
             size_t end;
-            String src = "a}}";
+            string src = "a}}";
             auto key = parseKey(src, "}}", end);
             assert(key.length == 1);
             assert(key[0] == "a");
@@ -1181,7 +1197,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         {  // multiple chars, single segment, no whitespace
             size_t end;
-            String src = "Mio}}";
+            string src = "Mio}}";
             auto key = parseKey(src, "}}", end);
             assert(key.length == 1);
             assert(key[0] == "Mio");
@@ -1189,7 +1205,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         {  // single char, multiple segments, no whitespace
             size_t end;
-            String src = "a.b.c}}";
+            string src = "a.b.c}}";
             auto key = parseKey(src, "}}", end);
             assert(key.length == 3);
             assert(key[0] == "a");
@@ -1199,7 +1215,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         {  // multiple chars, multiple segments, no whitespace
             size_t end;
-            String src = "Mio.Ritsu.Yui}}";
+            string src = "Mio.Ritsu.Yui}}";
             auto key = parseKey(src, "}}", end);
             assert(key.length == 3);
             assert(key[0] == "Mio");
@@ -1209,7 +1225,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         {  // whitespace
             size_t end;
-            String src = "  Mio  .  Ritsu  }}";
+            string src = "  Mio  .  Ritsu  }}";
             auto key = parseKey(src, "}}", end);
             assert(key.length == 2);
             assert(key[0] == "Mio");
@@ -1218,7 +1234,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         {  // single char custom end delimiter
             size_t end;
-            String src = "Ritsu-";
+            string src = "Ritsu-";
             auto key = parseKey(src, "-", end);
             assert(key.length == 1);
             assert(key[0] == "Ritsu");
@@ -1226,7 +1242,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         {  // extra chars at end
             size_t end;
-            String src = "Ritsu}}abc";
+            string src = "Ritsu}}abc";
             auto key = parseKey(src, "}}", end);
             assert(key.length == 1);
             assert(key[0] == "Ritsu");
@@ -1234,7 +1250,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         {  // error: no end delimiter
             size_t end;
-            String src = "a.b.c";
+            string src = "a.b.c";
             try {
                 auto key = parseKey(src, "}}", end);
                 assert(false);
@@ -1242,7 +1258,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         {  // error: missing tag name
             size_t end;
-            String src = "  }}";
+            string src = "  }}";
             try {
                 auto key = parseKey(src, "}}", end);
                 assert(false);
@@ -1250,7 +1266,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         {  // error: missing ending tag name
             size_t end;
-            String src = "Mio.}}";
+            string src = "Mio.}}";
             try {
                 auto key = parseKey(src, "}}", end);
                 assert(false);
@@ -1258,7 +1274,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         }
         {  // error: missing middle tag name
             size_t end;
-            String src = "Mio. .Ritsu}}";
+            string src = "Mio. .Ritsu}}";
             try {
                 auto key = parseKey(src, "}}", end);
                 assert(false);
@@ -1267,7 +1283,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
     }
 
     @trusted
-    static String keyToString(in String[] key)
+    static string keyToString(in string[] key)
     {
         if (key.length == 0)
             return null;
@@ -1275,7 +1291,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
         if (key.length == 1)
             return key[0];
 
-        Appender!String buf;
+        Appender!string buf;
         foreach (index, segment; key) {
             if (index != 0)
                 buf.put('.');
@@ -1307,14 +1323,14 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
 
         union
         {
-            String text;
+            string text;
 
             struct
             {
-                String[] key;
+                string[] key;
                 bool     flag;    // true is inverted or unescape
                 Node[]   childs;  // for list section
-                String   source;  // for lambda section
+                string   source;  // for lambda section
             }
         }
 
@@ -1326,7 +1342,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
              * Params:
              *   t = raw text
              */
-            this(String t)
+            this(string t)
             {
                 type = NodeType.text;
                 text = t;
@@ -1340,7 +1356,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
              *   k = key string of tag
              *   f = invert? or escape?
              */
-            this(NodeType t, String[] k, bool f = false)
+            this(NodeType t, string[] k, bool f = false)
             {
                 type = t;
                 key  = k;
@@ -1360,7 +1376,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
 
             final switch (type) {
             case NodeType.text:
-                result = "[T : \"" ~ to!string(text) ~ "\"]";
+                result = "[T : \"" ~ text ~ "\"]";
                 break;
             case NodeType.var:
                 result = "[" ~ (flag ? "E" : "V") ~ " : \"" ~ keyToString(key) ~ "\"]";
@@ -1369,7 +1385,7 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
                 result = "[" ~ (flag ? "I" : "S") ~ " : \"" ~ keyToString(key) ~ "\", [ ";
                 foreach (ref node; childs)
                     result ~= node.toString() ~ " ";
-                result ~= "], \"" ~ to!string(source) ~ "\"]";
+                result ~= "], \"" ~ source ~ "\"]";
                 break;
             case NodeType.partial:
                 result = "[P : \"" ~ keyToString(key) ~ "\"]";
@@ -1403,8 +1419,6 @@ struct MustacheEngine(String = string) if (isSomeString!(String))
 
 unittest
 {
-    alias MustacheEngine!(string) Mustache;
-
     std.file.write("unittest.mustache", "Level: {{lvl}}");
     scope(exit) std.file.remove("unittest.mustache");
 
@@ -1442,8 +1456,6 @@ unittest
 
 unittest
 {
-    alias Mustache = MustacheEngine!(string);
-
     std.file.write("unittest.mustache", "{{>name}}");
     scope(exit) std.file.remove("unittest.mustache");
     std.file.write("other.mustache", "Ok");
